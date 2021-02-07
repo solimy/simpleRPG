@@ -1,0 +1,5 @@
+redislite
+fastapi
+uvicorn
+pyjwt
+python-multipart
