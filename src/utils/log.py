@@ -8,7 +8,7 @@ dictConfig({
     "formatters": {
         "default": {
             "()": "uvicorn.logging.DefaultFormatter",
-            "fmt": "%(levelprefix)s %(asctime)s %(message)s",
+            "fmt": '%(asctime)s %(process)-5d %(levelname)-8s %(message)s',
             "datefmt": "%Y-%m-%d %H:%M:%S",
 
         },

@@ -3,3 +3,5 @@ fastapi
 uvicorn
 pyjwt
 python-multipart
+email-validator
+sqlalchemy
