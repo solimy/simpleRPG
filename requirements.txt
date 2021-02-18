@@ -1,7 +1,10 @@
-redislite
 fastapi
 uvicorn
+loguru
 pyjwt
 python-multipart
 email-validator
-sqlalchemy
+sqlalchemy==1.4.0b3
+aiomysql
+aioredis
+redislite

@@ -2,13 +2,17 @@ from fastapi.security import OAuth2PasswordRequestForm
 from fastapi import APIRouter, Depends, Form, HTTPException
 from datetime import datetime, timedelta
 from pydantic import BaseModel, EmailStr
+from sqlalchemy import select
+import sqlalchemy
+import traceback
 import hashlib
 import uuid
 import jwt
+import re
 
 from src.settings import settings
 from src.utils.log import logger
-from src.db.sql import new_session as new_sql
+from src.db.sql import get_sql
 from src.db.sql.model import User
 
 
@@ -16,7 +20,7 @@ router = APIRouter()
 
 
 @router.post("/auth/register")
-def register(username: EmailStr = Form(...), password: str = Form(...), alias: str = Form(...)):
+async def register(username: EmailStr = Form(...), password: str = Form(...), alias: str = Form(...)):
     salt = uuid.uuid4().bytes
     hashed_password = hashlib.sha512(password.encode('utf-8') + salt).digest()
     user = User(
@@ -25,12 +29,26 @@ def register(username: EmailStr = Form(...), password: str = Form(...), alias: s
         password=hashed_password,
         salt=salt
     )
-    sql = new_sql()
+    sql = await get_sql()
     sql.add(user)
     try:
-        sql.commit()
-    except:
+        await sql.commit()
+    except sqlalchemy.exc.IntegrityError:
         raise HTTPException(status_code=400, detail="Username already used")
+    except sqlalchemy.exc.DataError as e:
+        if match:=re.search('Data too long for column \'(.*)\'', e.args[0]):
+            detail = f'{match.groups()[0]} is too long'
+        else:
+            detail = None
+        raise HTTPException(status_code=400, detail=detail)
+    except Exception as e:
+        logger.critical(type(e))
+        logger.critical(traceback.format_exc())
+        raise HTTPException(status_code=500)
+    finally:
+        await sql.close()
+
+
 
 
 class AuthenticateResponse(BaseModel):
@@ -38,12 +56,11 @@ class AuthenticateResponse(BaseModel):
     access_token: str = None
 
 @router.post("/auth/authenticate", response_model=AuthenticateResponse)
-def authenticate(data: OAuth2PasswordRequestForm = Depends()) -> dict:
-    sql = new_sql()
-    try:
-        user = sql.query(User).filter_by(username=data.username).first()
-        assert hashlib.sha512(data.password.encode('utf-8') + user.salt).digest() == user.password
-    except:
+async def authenticate(data: OAuth2PasswordRequestForm = Depends()) -> dict:
+    sql = await get_sql()
+    user = (await sql.execute(select(User).where(User.username == data.username))).scalar()
+    await sql.close()
+    if not user or not hashlib.sha512(data.password.encode('utf-8') + user.salt).digest() == user.password:
         raise HTTPException(status_code=400, detail="Wrong credentials")
     return AuthenticateResponse(
         access_token=jwt.encode(
