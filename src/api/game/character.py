@@ -16,8 +16,7 @@ from src.db.sql import get_sql
 router = APIRouter()
 
 
-class MaxCharCountReached(Exception):
-    pass
+class MaxCharCountReached(Exception): pass
 
 
 class CreateRequest(BaseModel):
@@ -39,8 +38,7 @@ async def create(token: str = Depends(OAuth2Token()), data: CreateRequest = Depe
     try:
         sql = await get_sql()
         if (await sql.execute(
-            sqlalchemy
-            .select(func.count(Entity.id))
+            select(func.count(Entity.id))
             .where(Entity.account_id == account_id)
             .join(Character, Entity.id == Character.id)
             )).scalar() >= settings.max_character_by_account:
@@ -74,11 +72,6 @@ async def create(token: str = Depends(OAuth2Token()), data: CreateRequest = Depe
         await sql.close()
 
 
-@router.post("/game/character/image/set")
-async def create(token: str = Depends(OAuth2Token()), image: UploadFile = File(...)):
-    pass
-
-
-@router.post("/test")
-async def test(token: str = Depends(OAuth2Token())):
-    logger.info(token)
+# @router.post("/game/character/image/set")
+# async def set_image(token: str = Depends(OAuth2Token()), image: UploadFile = File(...)):
+#     pass

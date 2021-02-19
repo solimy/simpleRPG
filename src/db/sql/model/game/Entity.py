@@ -8,4 +8,4 @@ from src.db.sql.model import Base
 class Entity(Base):
     __tablename__ = 'entity'
     id = Column(BINARY(16), primary_key=True)
-    account_id = Column(ForeignKey('account.id'), nullable=True)
+    account_id = Column(ForeignKey('account.id', ondelete='CASCADE'), nullable=True)
