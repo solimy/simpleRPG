@@ -13,7 +13,7 @@ import re
 from src.settings import settings
 from src.utils.log import logger
 from src.db.sql import get_sql
-from src.db.sql.model import User
+from src.db.sql.model import Account
 
 
 router = APIRouter()
@@ -23,7 +23,7 @@ router = APIRouter()
 async def register(username: EmailStr = Form(...), password: str = Form(...), alias: str = Form(...)):
     salt = uuid.uuid4().bytes
     hashed_password = hashlib.sha512(password.encode('utf-8') + salt).digest()
-    user = User(
+    user = Account(
         alias=alias,
         username=username,
         password=hashed_password,
@@ -49,8 +49,6 @@ async def register(username: EmailStr = Form(...), password: str = Form(...), al
         await sql.close()
 
 
-
-
 class AuthenticateResponse(BaseModel):
     token_type: str = "bearer"
     access_token: str = None
@@ -58,7 +56,7 @@ class AuthenticateResponse(BaseModel):
 @router.post("/auth/authenticate", response_model=AuthenticateResponse)
 async def authenticate(data: OAuth2PasswordRequestForm = Depends()) -> dict:
     sql = await get_sql()
-    user = (await sql.execute(select(User).where(User.username == data.username))).scalar()
+    user = (await sql.execute(select(Account).where(Account.username == data.username))).scalar()
     await sql.close()
     if not user or not hashlib.sha512(data.password.encode('utf-8') + user.salt).digest() == user.password:
         raise HTTPException(status_code=400, detail="Wrong credentials")

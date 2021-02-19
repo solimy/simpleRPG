@@ -1,25 +1,19 @@
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import create_engine
 from loguru import logger
-import asyncio
+import os
 
 
-from src.db.sql import get_engine
-import src.db.sql.model as models
-
-
-async def main():
-    engine = await get_engine()
-    async with engine.begin() as conn:
-        for model in dir(models):
-            _model = getattr(models, model)
-            is_table = type(_model) == type(declarative_base())
-            if is_table:
-                await conn.run_sync(_model.metadata.drop_all)
-                logger.info(f'Table "{model}" deleted')
-                await conn.run_sync(_model.metadata.create_all)
-                logger.info(f'Table "{model}" created')
+from src.db.sql.model import Base
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
-    logger.info('All tables created')
+    logger.info('DB initialization')
+    engine = create_engine(f'mysql+pymysql://root@{os.environ["SQL_HOST"]}')
+    try:
+        engine.execute('drop database db')
+    except: pass
+    engine.execute('create database db')
+    engine = create_engine(f'mysql+pymysql://root@{os.environ["SQL_HOST"]}/db')
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    logger.info('DB initialized')
