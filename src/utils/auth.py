@@ -9,7 +9,7 @@ from src.settings import settings
 
 class OAuth2Token(OAuth2PasswordBearer):
     def __init__(self):
-        super().__init__(tokenUrl='auth/authenticate')
+        super().__init__(tokenUrl='account/authenticate')
 
     async def __call__(self, request: Request) -> Optional[Dict]:
         token = await super().__call__(request)
