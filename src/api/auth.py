@@ -2,6 +2,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from fastapi import APIRouter, Depends, Form, HTTPException
 from datetime import datetime, timedelta
 from pydantic import BaseModel, EmailStr
+from pydantic.types import UUID4
 from sqlalchemy import select
 import sqlalchemy
 import traceback
@@ -23,14 +24,15 @@ router = APIRouter()
 async def register(username: EmailStr = Form(...), password: str = Form(...), alias: str = Form(...)):
     salt = uuid.uuid4().bytes
     hashed_password = hashlib.sha512(password.encode('utf-8') + salt).digest()
-    user = Account(
+    account = Account(
+        id=uuid.uuid4().bytes,
         alias=alias,
         username=username,
         password=hashed_password,
         salt=salt
     )
     sql = await get_sql()
-    sql.add(user)
+    sql.add(account)
     try:
         await sql.commit()
     except sqlalchemy.exc.IntegrityError:
@@ -56,14 +58,14 @@ class AuthenticateResponse(BaseModel):
 @router.post("/auth/authenticate", response_model=AuthenticateResponse)
 async def authenticate(data: OAuth2PasswordRequestForm = Depends()) -> dict:
     sql = await get_sql()
-    user = (await sql.execute(select(Account).where(Account.username == data.username))).scalar()
+    account = (await sql.execute(select(Account).where(Account.username == data.username))).scalar()
     await sql.close()
-    if not user or not hashlib.sha512(data.password.encode('utf-8') + user.salt).digest() == user.password:
+    if not account or not hashlib.sha512(data.password.encode('utf-8') + account.salt).digest() == account.password:
         raise HTTPException(status_code=400, detail="Wrong credentials")
     return AuthenticateResponse(
         access_token=jwt.encode(
             {
-                'sub': data.username,
+                'sub': account.id.hex(),
                 'exp': datetime.utcnow() + timedelta(1)
             },
             settings.jwt_secret,
