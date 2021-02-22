@@ -1,5 +1,5 @@
-from fastapi.security import OAuth2PasswordRequestForm
 from fastapi import APIRouter, Depends, Form, HTTPException
+from fastapi.security import OAuth2PasswordRequestForm
 from datetime import datetime, timedelta
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
@@ -12,8 +12,8 @@ import jwt
 import re
 
 from src.settings import settings
-from src.db.sql import get_sql
-from src.db.sql.model import Account
+from src.db.sql import get_sql, model as sql_model
+from src.db.redis import get_redis, model as redis_model
 
 
 router = APIRouter()
@@ -23,17 +23,32 @@ router = APIRouter()
 async def register(username: EmailStr = Form(...), password: str = Form(...), alias: str = Form(...)):
     salt = uuid.uuid4().bytes
     hashed_password = hashlib.sha512(password.encode('utf-8') + salt).digest()
-    account = Account(
+    account = sql_model.Account(
         id=uuid.uuid4().bytes,
         alias=alias,
         username=username,
         password=hashed_password,
         salt=salt
     )
+    entity = sql_model.Entity(
+        id=uuid.uuid4().bytes,
+        account_id=account.id,
+    )
+    position = sql_model.Position(
+        id=entity.id,
+        location='default',
+        x=0,
+        y=0,
+        z=0,
+    )
     try:
-        sql = await get_sql()
-        sql.add(account)
-        await sql.commit()
+        sql_session = await get_sql()
+        sql_session.add(account)
+        await sql_session.flush()
+        sql_session.add(entity)
+        await sql_session.flush()
+        sql_session.add(position)
+        await sql_session.commit()
     except Exception as e:
         if isinstance(e, sqlalchemy.exc.IntegrityError) and (
             match := re.search(f'Duplicate entry \'(.*)\' for key \'account.username\'', e.args[0])):
@@ -54,10 +69,10 @@ async def register(username: EmailStr = Form(...), password: str = Form(...), al
             detail = None
             status_code = 500
             logger.critical(traceback.format_exc())
-        await sql.rollback()
+        await sql_session.rollback()
         raise HTTPException(status_code=status_code, detail=detail)
     finally:
-        await sql.close()
+        await sql_session.close()
 
 
 class AuthenticateResponse(BaseModel):
@@ -66,16 +81,39 @@ class AuthenticateResponse(BaseModel):
 
 @router.post("/account/authenticate", response_model=AuthenticateResponse)
 async def authenticate(data: OAuth2PasswordRequestForm = Depends()) -> dict:
-    sql = await get_sql()
-    account = (await sql.execute(select(Account).where(Account.username == data.username))).scalar()
-    await sql.close()
-    if not account or not hashlib.sha512(data.password.encode('utf-8') + account.salt).digest() == account.password:
-        raise HTTPException(status_code=400, detail="Wrong credentials")
+    try:
+        sql_session = await get_sql()
+        account = (await sql_session.execute(
+            select(sql_model.Account)
+            .where(sql_model.Account.username == data.username)
+        )).scalar()
+        if not account:
+            logger.error(f'account "{data.username}" not registered')
+            raise HTTPException(status_code=400, detail="Wrong credentials")
+        elif not hashlib.sha512(data.password.encode('utf-8') + account.salt).digest() == account.password:
+            logger.error(f'({data.username}) wrong password')
+            raise HTTPException(status_code=400, detail="Wrong credentials")
+        entity = (await sql_session.execute(
+            select(sql_model.Entity)
+            .where(sql_model.Entity.account_id == account.id)
+        )).scalar()
+        position = (await sql_session.execute(
+            select(sql_model.Position)
+            .where(sql_model.Position.id == entity.id)
+        )).scalar()
+        redis_client = await get_redis()
+        rentity = redis_model.Entity(redis_client, entity.id)
+        await rentity.set_alias(account.alias)
+        rposition = redis_model.Position(redis_client, entity.id)
+        await rentity.set_alias(account.alias)
+    finally:
+        await sql_session.close()
     return AuthenticateResponse(
         access_token=jwt.encode(
             {
-                'sub': account.id.hex(),
-                'exp': datetime.utcnow() + timedelta(1)
+                'sub': account.username,
+                'exp': datetime.utcnow() + timedelta(1),
+                'eid': entity.id.hex(),
             },
             settings.jwt_secret,
             algorithm="HS256"

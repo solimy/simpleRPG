@@ -8,3 +8,4 @@ sqlalchemy==1.4.0b3
 aiomysql
 aioredis
 redislite
+msgpack
